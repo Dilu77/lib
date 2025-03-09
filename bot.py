@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Bot configuration
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7756102128:AAFlYIwO70BLE1zT9iFi6Dc4yLpeJYPOemQ")
+API_ID = int(os.environ.get("API_ID", 18329555))
+API_HASH = os.environ.get("API_HASH", "7bf83fddf8244fddfb270701e31470a8")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb+srv://fdtekkz7:XbWjwqaWWOMu9RNI@cluster0.bc5z5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024  # 50MB in bytes
 MAX_RESULTS = 7  # Maximum number of search results to show at once
@@ -650,8 +652,12 @@ async def is_admin(user_id: int) -> bool:
 
 def main() -> None:
     """Start the bot."""
-    # Create the Application
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Create the Application with API ID and API HASH if available
+    if API_ID and API_HASH:
+        application = Application.builder().token(TELEGRAM_TOKEN).api_id(API_ID).api_hash(API_HASH).build()
+    else:
+        # Fallback to token-only initialization
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
