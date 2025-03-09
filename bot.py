@@ -6,7 +6,7 @@ import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
 from libgen_api import LibgenSearch
@@ -739,6 +739,7 @@ async def is_admin(user_id: int) -> bool:
     admin_ids = [int(id_str) for id_str in admin_ids if id_str.strip()]
     return user_id in admin_ids
 
+    
 # Main function - start the bot
 async def main():
     """Start the Pyrogram client."""
@@ -746,3 +747,10 @@ async def main():
     print("Bot started!")
     
     # Keep the bot running
+    await idle()  # This is missing
+    
+    # Stop the client when idle() is interrupted
+    await app.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
