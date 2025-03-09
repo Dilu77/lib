@@ -6,8 +6,8 @@ import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
 from libgen_api import LibgenSearch
 
@@ -18,9 +18,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot configuration
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7756102128:AAFlYIwO70BLE1zT9iFi6Dc4yLpeJYPOemQ")
 API_ID = int(os.environ.get("API_ID", 18329555))
 API_HASH = os.environ.get("API_HASH", "7bf83fddf8244fddfb270701e31470a8")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "7756102128:AAFlYIwO70BLE1zT9iFi6Dc4yLpeJYPOemQ")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb+srv://fdtekkz7:XbWjwqaWWOMu9RNI@cluster0.bc5z5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024  # 50MB in bytes
 MAX_RESULTS = 7  # Maximum number of search results to show at once
@@ -34,9 +34,27 @@ db = client.book_bot_db
 users_collection = db.users
 downloads_collection = db.downloads
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# Initialize Pyrogram client
+app = Client(
+    "book_fetch_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
+
+# Dict to store user data (equivalent to context.user_data in python-telegram-bot)
+user_data = {}
+
+# Helper function to get user data
+def get_user_data(user_id):
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    return user_data[user_id]
+
+@app.on_message(filters.command("start"))
+async def start_command(client, message: Message):
     """Send a welcome message when the command /start is issued."""
-    user = update.effective_user
+    user = message.from_user
     
     # Store user in database
     await users_collection.update_one(
@@ -64,14 +82,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    await message.reply_text(
         f"Hello {user.first_name}! Welcome to the 📚 Ultimate Book Fetch Bot 📚\n\n"
         "I can help you find and download books from Library Genesis.\n\n"
         "What would you like to do?",
         reply_markup=reply_markup
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("help"))
+async def help_command(client, message: Message):
     """Send a help message when the command /help is issued."""
     help_text = (
         "📚 *Book Fetch Bot Help* 📚\n\n"
@@ -99,14 +118,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await message.reply_text(help_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_callback_query()
+async def callback_handler(client, callback_query: CallbackQuery):
     """Handle button clicks."""
-    query = update.callback_query
-    await query.answer()
+    user_id = callback_query.from_user.id
+    data = callback_query.data
+    user_data_dict = get_user_data(user_id)
     
-    if query.data == "start":
+    # Answer the callback query to remove the loading state
+    await callback_query.answer()
+    
+    if data == "start":
         keyboard = [
             [InlineKeyboardButton("Search by Title", callback_data="search_title")],
             [InlineKeyboardButton("Search by Author", callback_data="search_author")],
@@ -114,14 +138,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton("Help", callback_data="help")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
+        
+        await callback_query.message.edit_text(
             "📚 *Ultimate Book Fetch Bot* 📚\n\n"
             "What would you like to do?",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
     
-    elif query.data == "help":
+    elif data == "help":
         help_text = (
             "📚 *Book Fetch Bot Help* 📚\n\n"
             "*Commands:*\n"
@@ -148,57 +173,61 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode="Markdown")
+        await callback_query.message.edit_text(
+            help_text, 
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
     
-    elif query.data == "search_title":
-        context.user_data["search_mode"] = "title"
-        await query.edit_message_text(
+    elif data == "search_title":
+        user_data_dict["search_mode"] = "title"
+        await callback_query.message.edit_text(
             "📚 *Search by Title* 📚\n\n"
             "Please enter the title of the book you're looking for:",
             parse_mode="Markdown"
         )
     
-    elif query.data == "search_author":
-        context.user_data["search_mode"] = "author"
-        await query.edit_message_text(
+    elif data == "search_author":
+        user_data_dict["search_mode"] = "author"
+        await callback_query.message.edit_text(
             "📚 *Search by Author* 📚\n\n"
             "Please enter the author's name:",
             parse_mode="Markdown"
         )
     
-    elif query.data == "my_downloads":
-        await show_downloads(query, context)
+    elif data == "my_downloads":
+        await show_downloads(client, callback_query)
     
-    elif query.data.startswith("book_"):
-        book_id = query.data.split("_")[1]
+    elif data.startswith("book_"):
+        book_id = data.split("_")[1]
         book_index = int(book_id)
         
         # Get book details from user data
-        if "search_results" in context.user_data and book_index < len(context.user_data["search_results"]):
-            book = context.user_data["search_results"][book_index]
-            await show_book_details(query, context, book)
+        if "search_results" in user_data_dict and book_index < len(user_data_dict["search_results"]):
+            book = user_data_dict["search_results"][book_index]
+            await show_book_details(client, callback_query, book)
     
-    elif query.data.startswith("download_"):
-        book_id = query.data.split("_")[1]
+    elif data.startswith("download_"):
+        book_id = data.split("_")[1]
         book_index = int(book_id)
         
         # Get book details from user data
-        if "search_results" in context.user_data and book_index < len(context.user_data["search_results"]):
-            book = context.user_data["search_results"][book_index]
-            await download_book(query, context, book)
+        if "search_results" in user_data_dict and book_index < len(user_data_dict["search_results"]):
+            book = user_data_dict["search_results"][book_index]
+            await download_book(client, callback_query, book)
     
-    elif query.data == "back_to_results":
+    elif data == "back_to_results":
         # Show previous search results
-        if "search_results" in context.user_data and context.user_data["search_results"]:
-            await show_search_results(query, context, context.user_data["search_results"])
+        if "search_results" in user_data_dict and user_data_dict["search_results"]:
+            await show_search_results(client, callback_query.message, user_id, user_data_dict["search_results"])
     
-    elif query.data.startswith("page_"):
-        page = int(query.data.split("_")[1])
-        await show_search_results(query, context, context.user_data["search_results"], page)
+    elif data.startswith("page_"):
+        page = int(data.split("_")[1])
+        await show_search_results(client, callback_query.message, user_id, user_data_dict["search_results"], page)
 
-async def show_downloads(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def show_downloads(client, callback_query: CallbackQuery):
     """Show user's download history."""
-    user_id = query.from_user.id
+    user_id = callback_query.from_user.id
     downloads = await downloads_collection.find({"user_id": user_id}).sort("date", -1).limit(10).to_list(length=10)
     
     if not downloads:
@@ -207,7 +236,7 @@ async def show_downloads(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await callback_query.message.edit_text(
             "📚 *My Downloads* 📚\n\n"
             "You haven't downloaded any books yet.",
             reply_markup=reply_markup,
@@ -226,18 +255,24 @@ async def show_downloads(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="Markdown")
+    await callback_query.message.edit_text(
+        message, 
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
 
-async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("search"))
+async def search_command(client, message: Message):
     """Handle general search queries."""
-    if not context.args:
-        await update.message.reply_text(
+    query = message.text.split(' ', 1)
+    if len(query) < 2:
+        await message.reply_text(
             "Please specify what you want to search for. For example:\n"
             "/search The Hobbit"
         )
         return
     
-    query = " ".join(context.args)
+    query = query[1].strip()
     
     # Try title search first, then author if no results
     results = libgen.search_title(query)
@@ -248,70 +283,121 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         search_type = "author"
     
     if not results:
-        await update.message.reply_text(
+        await message.reply_text(
             f"Sorry, I couldn't find any books matching '{query}'.\n\n"
             "Please try a different search term or check your spelling."
         )
         return
     
-    context.user_data["search_results"] = results
-    context.user_data["search_mode"] = search_type
-    context.user_data["search_query"] = query
+    user_id = message.from_user.id
+    user_data_dict = get_user_data(user_id)
+    user_data_dict["search_results"] = results
+    user_data_dict["search_mode"] = search_type
+    user_data_dict["search_query"] = query
     
-    await show_search_results_message(update, context, results)
+    await show_search_results(client, message, user_id, results)
 
-async def title_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("title"))
+async def title_search_command(client, message: Message):
     """Handle title search queries."""
-    if not context.args:
-        await update.message.reply_text("Please specify a title to search for.")
+    query = message.text.split(' ', 1)
+    if len(query) < 2:
+        await message.reply_text("Please specify a title to search for.")
         return
     
-    title = " ".join(context.args)
+    title = query[1].strip()
     results = libgen.search_title(title)
     
     if not results:
-        await update.message.reply_text(
+        await message.reply_text(
             f"Sorry, I couldn't find any books with title matching '{title}'.\n\n"
             "Please try a different search term or check your spelling."
         )
         return
     
-    context.user_data["search_results"] = results
-    context.user_data["search_mode"] = "title"
-    context.user_data["search_query"] = title
+    user_id = message.from_user.id
+    user_data_dict = get_user_data(user_id)
+    user_data_dict["search_results"] = results
+    user_data_dict["search_mode"] = "title"
+    user_data_dict["search_query"] = title
     
-    await show_search_results_message(update, context, results)
+    await show_search_results(client, message, user_id, results)
 
-async def author_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("author"))
+async def author_search_command(client, message: Message):
     """Handle author search queries."""
-    if not context.args:
-        await update.message.reply_text("Please specify an author to search for.")
+    query = message.text.split(' ', 1)
+    if len(query) < 2:
+        await message.reply_text("Please specify an author to search for.")
         return
     
-    author = " ".join(context.args)
+    author = query[1].strip()
     results = libgen.search_author(author)
     
     if not results:
-        await update.message.reply_text(
+        await message.reply_text(
             f"Sorry, I couldn't find any books by author '{author}'.\n\n"
             "Please try a different search term or check your spelling."
         )
         return
     
-    context.user_data["search_results"] = results
-    context.user_data["search_mode"] = "author"
-    context.user_data["search_query"] = author
+    user_id = message.from_user.id
+    user_data_dict = get_user_data(user_id)
+    user_data_dict["search_results"] = results
+    user_data_dict["search_mode"] = "author"
+    user_data_dict["search_query"] = author
     
-    await show_search_results_message(update, context, results)
+    await show_search_results(client, message, user_id, results)
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("downloads"))
+async def downloads_command(client, message: Message):
+    """Handle downloads command."""
+    user_id = message.from_user.id
+    downloads = await downloads_collection.find({"user_id": user_id}).sort("date", -1).limit(10).to_list(length=10)
+    
+    if not downloads:
+        keyboard = [
+            [InlineKeyboardButton("Back to Main Menu", callback_data="start")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await message.reply_text(
+            "📚 *My Downloads* 📚\n\n"
+            "You haven't downloaded any books yet.",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return
+    
+    message_text = "📚 *Your Recent Downloads* 📚\n\n"
+    for i, download in enumerate(downloads):
+        date_str = download["date"].strftime("%Y-%m-%d %H:%M")
+        message_text += f"{i+1}. *{download['title']}* by {download['author']}\n"
+        message_text += f"   Format: {download['extension']} | Downloaded: {date_str}\n\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("Back to Main Menu", callback_data="start")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await message.reply_text(
+        message_text, 
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+@app.on_message(filters.text & ~filters.command)
+async def text_handler(client, message: Message):
     """Handle text messages for search queries."""
-    if "search_mode" in context.user_data:
-        search_mode = context.user_data["search_mode"]
-        query = update.message.text.strip()
+    user_id = message.from_user.id
+    user_data_dict = get_user_data(user_id)
+    
+    if "search_mode" in user_data_dict:
+        search_mode = user_data_dict["search_mode"]
+        query = message.text.strip()
         
         if len(query) < 3:
-            await update.message.reply_text(
+            await message.reply_text(
                 "Your search query is too short. Please use at least 3 characters."
             )
             return
@@ -319,7 +405,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if search_mode == "title":
             results = libgen.search_title(query)
             if not results:
-                await update.message.reply_text(
+                await message.reply_text(
                     f"Sorry, I couldn't find any books with title matching '{query}'.\n\n"
                     "Please try a different search term or check your spelling."
                 )
@@ -327,40 +413,37 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         else:  # author mode
             results = libgen.search_author(query)
             if not results:
-                await update.message.reply_text(
+                await message.reply_text(
                     f"Sorry, I couldn't find any books by author '{query}'.\n\n"
                     "Please try a different search term or check your spelling."
                 )
                 return
         
-        context.user_data["search_results"] = results
-        context.user_data["search_query"] = query
+        user_data_dict["search_results"] = results
+        user_data_dict["search_query"] = query
         
-        await show_search_results_message(update, context, results)
+        await show_search_results(client, message, user_id, results)
     else:
         # If no search mode is set, assume the user wants to search by title
-        results = libgen.search_title(update.message.text)
+        results = libgen.search_title(message.text)
         
         if not results:
-            results = libgen.search_author(update.message.text)
+            results = libgen.search_author(message.text)
             if not results:
-                await update.message.reply_text(
-                    f"Sorry, I couldn't find any books matching '{update.message.text}'.\n\n"
+                await message.reply_text(
+                    f"Sorry, I couldn't find any books matching '{message.text}'.\n\n"
                     "Please try a different search term or check your spelling."
                 )
                 return
         
-        context.user_data["search_results"] = results
-        context.user_data["search_query"] = update.message.text
+        user_data_dict["search_results"] = results
+        user_data_dict["search_query"] = message.text
         
-        await show_search_results_message(update, context, results)
+        await show_search_results(client, message, user_id, results)
 
-async def show_search_results_message(update: Update, context: ContextTypes.DEFAULT_TYPE, results: List[Dict[str, Any]]) -> None:
-    """Display search results as a message."""
-    await show_search_results(update.message, context, results)
-
-async def show_search_results(message_obj, context: ContextTypes.DEFAULT_TYPE, results: List[Dict[str, Any]], page: int = 0) -> None:
+async def show_search_results(client, message_obj, user_id: int, results: List[Dict[str, Any]], page: int = 0):
     """Display search results with pagination."""
+    user_data_dict = get_user_data(user_id)
     total_results = len(results)
     total_pages = (total_results + MAX_RESULTS - 1) // MAX_RESULTS
     
@@ -369,8 +452,8 @@ async def show_search_results(message_obj, context: ContextTypes.DEFAULT_TYPE, r
     
     page_results = results[start_idx:end_idx]
     
-    query = context.user_data.get("search_query", "your search")
-    search_mode = context.user_data.get("search_mode", "title")
+    query = user_data_dict.get("search_query", "your search")
+    search_mode = user_data_dict.get("search_mode", "title")
     
     if search_mode == "title":
         header = f"📚 *Found {total_results} books matching title:* '{query}' 📚"
@@ -423,22 +506,22 @@ async def show_search_results(message_obj, context: ContextTypes.DEFAULT_TYPE, r
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    if hasattr(message_obj, "edit_message_text"):
-        # It's a callback query
-        await message_obj.edit_message_text(
+    if hasattr(message_obj, "edit_text"):
+        # It's a message that can be edited (callback query message)
+        await message_obj.edit_text(
             message,
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
     else:
-        # It's a message
+        # It's a new message
         await message_obj.reply_text(
             message,
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
 
-async def show_book_details(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[str, Any]) -> None:
+async def show_book_details(client, callback_query: CallbackQuery, book: Dict[str, Any]):
     """Show detailed information about a book."""
     title = book.get("Title", "Unknown Title")
     author = book.get("Author", "Unknown Author")
@@ -459,7 +542,9 @@ async def show_book_details(query, context: ContextTypes.DEFAULT_TYPE, book: Dic
     message += f"*Size:* {size}\n"
     message += f"*Format:* {extension.upper()}\n\n"
     
-    book_index = context.user_data["search_results"].index(book)
+    user_id = callback_query.from_user.id
+    user_data_dict = get_user_data(user_id)
+    book_index = user_data_dict["search_results"].index(book)
     
     keyboard = [
         [InlineKeyboardButton("📥 Download Book", callback_data=f"download_{book_index}")],
@@ -468,15 +553,15 @@ async def show_book_details(query, context: ContextTypes.DEFAULT_TYPE, book: Dic
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await callback_query.message.edit_text(
         message,
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
 
-async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[str, Any]) -> None:
+async def download_book(client, callback_query: CallbackQuery, book: Dict[str, Any]):
     """Handle book download."""
-    await query.edit_message_text(
+    await callback_query.message.edit_text(
         "⏳ *Processing your download request...*\n\n"
         "This might take a moment, depending on the book size.",
         parse_mode="Markdown"
@@ -487,7 +572,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         download_links = libgen.resolve_download_links(book)
         
         if not download_links:
-            await query.edit_message_text(
+            await callback_query.message.edit_text(
                 "❌ *Download Failed*\n\n"
                 "Sorry, I couldn't find valid download links for this book.",
                 parse_mode="Markdown"
@@ -502,7 +587,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
                 break
         
         if not download_url:
-            await query.edit_message_text(
+            await callback_query.message.edit_text(
                 "❌ *Download Failed*\n\n"
                 "Sorry, I couldn't find valid download links for this book.",
                 parse_mode="Markdown"
@@ -519,7 +604,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         
         # Record the download in the database
         await downloads_collection.insert_one({
-            "user_id": query.from_user.id,
+            "user_id": callback_query.from_user.id,
             "title": title,
             "author": author,
             "extension": extension,
@@ -530,7 +615,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         
         # Update user download count
         await users_collection.update_one(
-            {"user_id": query.from_user.id},
+            {"user_id": callback_query.from_user.id},
             {"$inc": {"downloads": 1}}
         )
         
@@ -543,7 +628,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(
+            await callback_query.message.edit_text(
                 f"📚 *Book Too Large for Direct Download* 📚\n\n"
                 f"*Title:* {title}\n"
                 f"*Author:* {author}\n"
@@ -571,10 +656,10 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         caption = f"📖 *{title}*\nby {author}"
         
         with open(temp_filename, "rb") as file:
-            await context.bot.send_document(
-                chat_id=query.message.chat_id,
-                document=file,
-                filename=f"{safe_title}.{extension}",
+            await client.send_document(
+                chat_id=callback_query.message.chat.id,
+                document=temp_filename,
+                file_name=f"{safe_title}.{extension}",
                 caption=caption,
                 parse_mode="Markdown"
             )
@@ -589,7 +674,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await callback_query.message.edit_text(
             "✅ *Download Complete!*\n\n"
             "Your book has been sent. Enjoy reading!",
             reply_markup=reply_markup,
@@ -605,7 +690,7 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await callback_query.message.edit_text(
             "❌ *Download Failed*\n\n"
             f"Error: {str(e)[:200]}...\n\n"
             "Please try again later or choose another book.",
@@ -613,10 +698,14 @@ async def download_book(query, context: ContextTypes.DEFAULT_TYPE, book: Dict[st
             parse_mode="Markdown"
         )
 
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+@app.on_message(filters.command("stats"))
+async def stats_command(client, message: Message):
     """Show bot statistics."""
-    if not await is_admin(update.effective_user.id):
-        await update.message.reply_text("This command is only available to admins.")
+    user_id = message.from_user.id
+    
+    # Check if user is admin
+    if not await is_admin(user_id):
+        await message.reply_text("This command is only available to admins.")
         return
     
     total_users = await users_collection.count_documents({})
@@ -630,18 +719,18 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     ]
     top_books = await downloads_collection.aggregate(pipeline).to_list(length=5)
     
-    message = f"📊 *Bot Statistics* 📊\n\n"
-    message += f"*Total Users:* {total_users}\n"
-    message += f"*Total Downloads:* {total_downloads}\n\n"
-    message += "*Top 5 Books:*\n"
+    message_text = f"📊 *Bot Statistics* 📊\n\n"
+    message_text += f"*Total Users:* {total_users}\n"
+    message_text += f"*Total Downloads:* {total_downloads}\n\n"
+    message_text += "*Top 5 Books:*\n"
     
     for i, book in enumerate(top_books):
         title = book["_id"]["title"]
         author = book["_id"]["author"]
         count = book["count"]
-        message += f"{i+1}. *{title}* by {author} - {count} downloads\n"
+        message_text += f"{i+1}. *{title}* by {author} - {count} downloads\n"
     
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await message.reply_text(message_text, parse_mode="Markdown")
 
 async def is_admin(user_id: int) -> bool:
     """Check if a user is an admin."""
@@ -650,32 +739,10 @@ async def is_admin(user_id: int) -> bool:
     admin_ids = [int(id_str) for id_str in admin_ids if id_str.strip()]
     return user_id in admin_ids
 
-def main() -> None:
-    """Start the bot."""
-    # Create the Application with API ID and API HASH if available
-    if API_ID and API_HASH:
-        application = Application.builder().token(TELEGRAM_TOKEN).api_id(API_ID).api_hash(API_HASH).build()
-    else:
-        # Fallback to token-only initialization
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("search", search_handler))
-    application.add_handler(CommandHandler("title", title_search_handler))
-    application.add_handler(CommandHandler("author", author_search_handler))
-    application.add_handler(CommandHandler("downloads", lambda u, c: show_downloads(u.callback_query, c)))
-    application.add_handler(CommandHandler("stats", stats_command))
+# Main function - start the bot
+async def main():
+    """Start the Pyrogram client."""
+    await app.start()
+    print("Bot started!")
     
-    # Add callback query handler
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Add message handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    
-    # Start the Bot
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+    # Keep the bot running
