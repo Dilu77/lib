@@ -8,7 +8,7 @@ from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-from motor import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from libgen_api import LibgenSearch
 
 # Configure logging
