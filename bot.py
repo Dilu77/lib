@@ -386,7 +386,7 @@ async def downloads_command(client, message: Message):
         parse_mode="Markdown"
     )
 
-@app.on_message(filters.text & filters.command(None))
+@app.on_message((filters.private | filters.group) & filters.text)
 async def text_handler(client, message: Message):
     """Handle text messages for search queries."""
     user_id = message.from_user.id
