@@ -739,33 +739,49 @@ async def is_admin(user_id: int) -> bool:
     admin_ids = [int(id_str) for id_str in admin_ids if id_str.strip()]
     return user_id in admin_ids
 
+# At the top of your file, add:
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad459fb.koyeb.app")  # Your Koyeb app URL
+WEBHOOK_PORT = int(os.environ.get("PORT", 8000))
+
+# Then in your main() function:
 async def main():
-    """Start the Pyrogram client and a simple web server for health checks."""
-    # Start the Pyrogram client
-    await app.start()
-    print("Bot started!")
-    
-    # Set up a simple web server for health checks
-    async def health_check(request):
-        return web.Response(text="OK", status=200)
-    
-    # Create web app
-    web_app = web.Application()
-    web_app.router.add_get("/", health_check)
-    web_app.router.add_get("/health", health_check)
-    
-    # Get port from environment or use default
-    port = int(os.environ.get("PORT", 8000))
-    
-    # Start web server
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"Health check server started on port {port}")
-    
-    # Keep the bot running indefinitely
-    await asyncio.Event().wait()
+    if WEBHOOK_URL:
+        # Use webhook mode
+        await app.start()
+        await app.set_webhook(WEBHOOK_URL + "/bot" + BOT_TOKEN)
+        
+        # Set up the web server to handle webhooks
+        async def webhook_handler(request):
+            if request.match_info.get('token') == BOT_TOKEN:
+                data = await request.read()
+                await app.process_webhook_update(data)
+                return web.Response()
+            return web.Response(status=403)
+        
+        async def health_check(request):
+            return web.Response(text="Bot is running", status=200)
+        
+        app = web.Application()
+        app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
+        app.router.add_get('/health', health_check)
+        app.router.add_get('/', health_check)
+        
+        # Start the web server
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
+        await site.start()
+        print(f"Webhook set: {WEBHOOK_URL}")
+        print(f"Server started at port {WEBHOOK_PORT}")
+        
+        # Keep the server running
+        while True:
+            await asyncio.sleep(3600)
+    else:
+        # Fallback to polling mode
+        await app.start()
+        print("Bot started in polling mode!")
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
