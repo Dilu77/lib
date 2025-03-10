@@ -5,7 +5,7 @@ import tempfile
 import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-
+from aiohttp import web
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -739,19 +739,37 @@ async def is_admin(user_id: int) -> bool:
     admin_ids = [int(id_str) for id_str in admin_ids if id_str.strip()]
     return user_id in admin_ids
 
-# Main function - start the bot
-
-# Main function - start the bot
 async def main():
-    """Start the Pyrogram client."""
+    """Start the Pyrogram client and a simple web server for health checks."""
+    # Start the Pyrogram client
     await app.start()
     print("Bot started!")
     
-    # Keep the bot running
-    await asyncio.Event().wait()  # This will run indefinitely without keyboard interrupt handling
+    # Set up a simple web server for health checks
+    async def health_check(request):
+        return web.Response(text="OK", status=200)
+    
+    # Create web app
+    web_app = web.Application()
+    web_app.router.add_get("/", health_check)
+    web_app.router.add_get("/health", health_check)
+    
+    # Get port from environment or use default
+    port = int(os.environ.get("PORT", 8000))
+    
+    # Start web server
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Health check server started on port {port}")
+    
+    # Keep the bot running indefinitely
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
+        # Make sure you have installed aiohttp in your requirements.txt
         asyncio.run(main())
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
