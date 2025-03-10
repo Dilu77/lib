@@ -4,3 +4,4 @@ motor==3.3.1
 libgen-api==1.0.1
 requests==2.31.0
 tgcrypto
+aiohttp
