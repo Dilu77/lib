@@ -744,44 +744,29 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad4
 WEBHOOK_PORT = int(os.environ.get("PORT", 8000))
 
 async def main():
-    if WEBHOOK_URL:
-        # Use webhook mode
-        await app.start()
-        await app.set_webhook(WEBHOOK_URL + "/bot" + BOT_TOKEN)
-        
-        # Set up the web server to handle webhooks
-        async def webhook_handler(request):
-            if request.match_info.get('token') == BOT_TOKEN:
-                data = await request.read()
-                await app.process_webhook_update(data)
-                return web.Response()
-            return web.Response(status=403)
-        
-        async def health_check(request):
-            return web.Response(text="Bot is running", status=200)
-        
-        # Rename this to web_app to avoid variable name conflict
-        web_app = web.Application()
-        web_app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
-        web_app.router.add_get('/health', health_check)
-        web_app.router.add_get('/', health_check)
-        
-        # Start the web server
-        runner = web.AppRunner(web_app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
-        await site.start()
-        print(f"Webhook set: {WEBHOOK_URL}")
-        print(f"Server started at port {WEBHOOK_PORT}")
-        
-        # Keep the server running
-        while True:
-            await asyncio.sleep(3600)
-    else:
-        # Fallback to polling mode
-        await app.start()
-        print("Bot started in polling mode!")
-        await asyncio.Event().wait()
+    await app.start()
+    
+    async def webhook_handler(request):
+        data = await request.json()
+        await app.process_update(data)
+        return web.Response()
+
+    async def health_check(request):
+        return web.Response(text="Bot is running", status=200)
+
+    web_app = web.Application()
+    web_app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
+    web_app.router.add_get('/health', health_check)
+    web_app.router.add_get('/', health_check)
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
+    await site.start()
+
+    print(f"Server started at port {WEBHOOK_PORT}")
+
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
