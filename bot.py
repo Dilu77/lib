@@ -743,7 +743,6 @@ async def is_admin(user_id: int) -> bool:
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad459fb.koyeb.app")  # Your Koyeb app URL
 WEBHOOK_PORT = int(os.environ.get("PORT", 8000))
 
-# Then in your main() function:
 async def main():
     if WEBHOOK_URL:
         # Use webhook mode
@@ -761,13 +760,14 @@ async def main():
         async def health_check(request):
             return web.Response(text="Bot is running", status=200)
         
-        app = web.Application()
-        app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
-        app.router.add_get('/health', health_check)
-        app.router.add_get('/', health_check)
+        # Rename this to web_app to avoid variable name conflict
+        web_app = web.Application()
+        web_app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
+        web_app.router.add_get('/health', health_check)
+        web_app.router.add_get('/', health_check)
         
         # Start the web server
-        runner = web.AppRunner(app)
+        runner = web.AppRunner(web_app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
         await site.start()
