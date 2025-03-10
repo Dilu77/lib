@@ -6,7 +6,7 @@ import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from pyrogram import Client, filters, idle
+from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
 from libgen_api import LibgenSearch
@@ -735,11 +735,12 @@ async def stats_command(client, message: Message):
 async def is_admin(user_id: int) -> bool:
     """Check if a user is an admin."""
     # You can define admin user IDs here or store them in the database/env vars
-    admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+    admin_ids = os.environ.get("ADMIN_IDS", "1195233863").split(",")
     admin_ids = [int(id_str) for id_str in admin_ids if id_str.strip()]
     return user_id in admin_ids
 
-    
+# Main function - start the bot
+
 # Main function - start the bot
 async def main():
     """Start the Pyrogram client."""
@@ -747,10 +748,10 @@ async def main():
     print("Bot started!")
     
     # Keep the bot running
-    await idle()  # This is missing
-    
-    # Stop the client when idle() is interrupted
-    await app.stop()
+    await asyncio.Event().wait()  # This will run indefinitely without keyboard interrupt handling
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
