@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 # Bot configuration
 API_ID = int(os.environ.get("API_ID", 18329555))
 API_HASH = os.environ.get("API_HASH", "7bf83fddf8244fddfb270701e31470a8")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "7756102128:AAFlYIwO70BLE1zT9iFi6Dc4yLpeJYPOemQ")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "7829564109:AAFJlA6CckL3gaHamJDsTI7ulAyHn39idAg")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb+srv://fdtekkz7:XbWjwqaWWOMu9RNI@cluster0.bc5z5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024  # 50MB in bytes
 MAX_RESULTS = 7  # Maximum number of search results to show at once
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad459fb.koyeb.app")
 
 # Initialize LibGen API
 libgen = LibgenSearch()
