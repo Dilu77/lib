@@ -741,37 +741,32 @@ async def is_admin(user_id: int) -> bool:
     return user_id in admin_ids
 
 # At the top of your file, add:
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad459fb.koyeb.app")  # Your Koyeb app URL
-WEBHOOK_PORT = int(os.environ.get("PORT", 8000))
+#WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://senior-netty-devadamax-cad459fb.koyeb.app")  # Your Koyeb app URL
+#WEBHOOK_PORT = int(os.environ.get("PORT", 8000))
 
 async def main():
+    # Start the bot in polling mode
     await app.start()
+    print("Bot started successfully in polling mode!")
     
-    async def webhook_handler(request):
-        data = await request.json()
-        await app.process_update(data)
-        return web.Response()
-
+    # Set up a minimal web server for health checks
     async def health_check(request):
         return web.Response(text="Bot is running", status=200)
 
     web_app = web.Application()
-    web_app.router.add_post(f'/bot{BOT_TOKEN}', webhook_handler)
     web_app.router.add_get('/health', health_check)
     web_app.router.add_get('/', health_check)
 
     runner = web.AppRunner(web_app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
+    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 8000)))
     await site.start()
-
-    print(f"Server started at port {WEBHOOK_PORT}")
-
-    await asyncio.Event().wait()
-
-if __name__ == "__main__":
-    try:
-        # Make sure you have installed aiohttp in your requirements.txt
-        asyncio.run(main())
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}")
+    
+    print(f"Health check server started at port {os.environ.get('PORT', 8000)}")
+    
+    # Keep the bot running
+    await idle()
+    
+    # Clean shutdown
+    await app.stop()
+    await runner.cleanup()
